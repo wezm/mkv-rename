@@ -1,9 +1,12 @@
 use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use matroska::{Matroska, TagValue};
+use mp4::Mp4Reader;
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
@@ -35,23 +38,61 @@ fn main() -> ExitCode {
 }
 
 fn process(path: &Path, dry_run: bool) -> Result<(), String> {
+    match path
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("mkv") => process_matroska(path, dry_run),
+        Some("mov" | "mp4" | "m4v") => process_mp4(path, dry_run),
+        _ => Err(String::from("unknown file type")),
+    }
+}
+
+fn process_matroska(path: &Path, dry_run: bool) -> Result<(), String> {
     let mkv = matroska::open(path).map_err(|err| err.to_string())?;
     let datetime =
-        creation_date(&mkv).ok_or_else(|| String::from("unable to determine creation date"))?;
+        mkv_creation_date(&mkv).ok_or_else(|| String::from("unable to determine creation date"))?;
 
-    // Generate new path
     let new_path = generate_new_path(path, datetime);
+    maybe_do_rename(path, &new_path, dry_run)?;
+
+    Ok(())
+}
+
+fn process_mp4(path: &Path, dry_run: bool) -> Result<(), String> {
+    let f = File::open(path).map_err(|err| err.to_string())?;
+    let size = f.metadata().map_err(|err| err.to_string())?.len();
+    let reader = BufReader::new(f);
+    let mp4 = Mp4Reader::read_header(reader, size).map_err(|err| err.to_string())?;
+    let datetime =
+        mp4_creation_date(&mp4).ok_or_else(|| String::from("unable to determine creation date"))?;
+
+    let new_path = generate_new_path(path, datetime);
+    maybe_do_rename(path, &new_path, dry_run)?;
+
+    Ok(())
+}
+
+fn maybe_do_rename(path: &Path, new_path: &PathBuf, dry_run: bool) -> Result<(), String> {
     if dry_run {
         println!("{} -> {}", path.display(), new_path.display());
     } else {
         fs::rename(path, &new_path)
             .map_err(|err| format!("unable to rename to {}: {}", new_path.display(), err))?;
     }
-
     Ok(())
 }
 
-fn creation_date(mkv: &Matroska) -> Option<OffsetDateTime> {
+fn mp4_creation_date<R>(mp4: &Mp4Reader<R>) -> Option<OffsetDateTime> {
+    let creation_time = mp4.moov.mvhd.creation_time;
+
+    // convert from MP4 epoch (1904-01-01) to Unix epoch (1970-01-01)
+    let timestamp = creation_time as i64 - 2082844800;
+    OffsetDateTime::from_unix_timestamp(timestamp).ok()
+}
+
+fn mkv_creation_date(mkv: &Matroska) -> Option<OffsetDateTime> {
     quicktime_creation_date(mkv).or(mkv.info.date_utc)
 }
 
