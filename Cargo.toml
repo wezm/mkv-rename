@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 matroska = "0.22.0"
 mp4 = "0.13.0"
-time = { version = "0.3.20", features = ["parsing"] }
+time = { version = "0.3.20", features = ["parsing", "formatting"] }
 xflags = "0.3.1"
