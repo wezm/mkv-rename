@@ -29,9 +29,17 @@ fn main() -> ExitCode {
         repeated paths: PathBuf
     };
     // TODO: use xflags::xflags! macro and make this a TryFrom impl
-    let Some(offset) = f32_to_i32((all_flags.tz_offset.unwrap_or_default() * 60. * 60.).round()) else {
-        eprintln!("offset too big");
-        return ExitCode::FAILURE;
+    // TODO: use let-else when CI/Alpine is on a new enough Rust version
+    // let Some(offset) = f32_to_i32((all_flags.tz_offset.unwrap_or_default() * 60. * 60.).round()) else {
+    //     eprintln!("offset too big");
+    //     return ExitCode::FAILURE;
+    // };
+    let offset = match f32_to_i32((all_flags.tz_offset.unwrap_or_default() * 60. * 60.).round()) {
+        Some(offset) => offset,
+        None => {
+            eprintln!("offset too big");
+            return ExitCode::FAILURE;
+        }
     };
     let flags = Flags {
         dry_run: all_flags.dry_run,
